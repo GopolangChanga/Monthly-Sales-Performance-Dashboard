@@ -1,0 +1,244 @@
+-- =============================================
+-- Creates all Dim and Fact tables in AdventureWorks_Presentation
+--
+-- Notes: - Run this BEFORE AdventureWorks_Presentation_Procs.sql
+--          (that script populates these tables).
+--        - Tables ordered: reference Dims first, then Dims that
+--          depend on other Dims (CustomerDetail_Dim), then Facts.
+-- =============================================
+
+USE AdventureWorks_Presentation;
+GO
+
+
+-- =============================================
+-- ProductCategory_Dim
+--
+-- =============================================
+-- DROP TABLE Productcategory_Dim;
+
+CREATE TABLE Productcategory_Dim
+(
+    [ProductCategoryID]           int,
+    [ProductCategory]             nvarchar(50),
+    [ProductCategory_ModifiedDate] datetime
+);
+GO
+
+
+-- =============================================
+-- ProductSubcategory_Dim
+-- =============================================
+-- DROP TABLE ProductSubcategory_Dim;
+
+CREATE TABLE ProductSubcategory_Dim
+(
+    [ProductSubcategoryID]           int,
+    [ProductCategoryID]              int,
+    [ProductSubCategory]             nvarchar(50),
+    ProductSubCategory_ModifiedDate  datetime
+);
+GO
+
+
+-- =============================================
+-- Product_Dim
+-- =============================================
+-- DROP TABLE Product_Dim;
+
+CREATE TABLE Product_Dim
+(
+    [ProductID]             int,
+    [ProductSubcategoryID]  int,
+    [ProductModelID]        int,
+
+    [ProductName]           nvarchar(50),
+    [Size]                  nvarchar(20),
+    [BaseProductName]       nvarchar(40),
+
+    [ProductNumber]         nvarchar(25),
+    [MakeFlag]              bit,
+    [FinishedGoodsFlag]     bit,
+    [ReorderPoint]          smallint,
+    [StandardCost]          money,
+    [ListPrice]             money,
+    [ProductLine]           nchar(30),
+    [Class]                 nchar(30),
+    [Style]                 nchar(30),
+    [SellStartDate]         datetime,
+    [SellEndDate]           datetime,
+    [DiscontinuedDate]      datetime,
+    Product_ModifiedDate    datetime
+);
+GO
+
+
+-- =============================================
+-- Person_Dim
+-- =============================================
+-- DROP TABLE Person_Dim;
+
+CREATE TABLE Person_Dim
+(
+    PersonID              int,
+    PersonType            nchar(2),
+    FirstName             nvarchar(50),
+    LastName              nvarchar(50),
+    EmailPromotion        int,
+    Person_ModifiedDate   datetime
+);
+GO
+
+
+-- =============================================
+-- Store_Dim
+-- =============================================
+-- DROP TABLE Store_Dim;
+
+CREATE TABLE Store_Dim
+(
+    [StoreID]             int,
+    [SalesPersonID]       int,
+    [StoreName]           nvarchar(50),
+    [Store_ModifiedDate]  datetime
+);
+GO
+
+
+-- =============================================
+-- Territory_Dim
+-- =============================================
+-- DROP TABLE Territory_Dim;
+
+CREATE TABLE Territory_Dim
+(
+    [TerritoryID]              int,
+    [TerritoryName]            nvarchar(50),
+    [CountryRegionCode]        nvarchar(3),
+    [Group]                    nvarchar(50),
+    [Territory_ModifiedDate]   datetime
+);
+GO
+
+
+-- =============================================
+-- Customer_Dim
+-- =============================================
+-- DROP TABLE Customer_Dim;
+
+CREATE TABLE Customer_Dim
+(
+    CustomerID              int,
+    PersonID                int,
+    StoreID                 int,
+    TerritoryID             int,
+    AccountNumber           nvarchar(10),
+    ModifiedDate_Customer   datetime
+);
+GO
+
+
+-- =============================================
+-- CustomerDetail_Dim
+-- Depends on Person_Dim + Customer_Dim (joined in usp_Load_dimcustomerdetail)
+-- =============================================
+-- DROP TABLE CustomerDetail_Dim;
+
+CREATE TABLE CustomerDetail_Dim
+(
+    PersonID               int,
+    PersonType             nchar(2),
+    FirstName              nvarchar(50),
+    LastName               nvarchar(50),
+    EmailPromotion         int,
+    Person_ModifiedDate    datetime,
+
+    CustomerID             int,
+    StoreID                int,
+    TerritoryID            int,
+    AccountNumber          nvarchar(10),
+    ModifiedDate_Customer  datetime
+);
+GO
+
+
+-- =============================================
+-- Geography_Dim
+--
+-- NOTE: the originally uploaded create script also included an
+-- INSERT INTO ... SELECT FROM Geography_Stage statement. That's
+-- removed here since usp_Load_dimgeography already handles the load
+-- as a proc -- this script only creates the table.
+-- =============================================
+-- DROP TABLE Geography_Dim;
+
+CREATE TABLE Geography_Dim
+(
+    [TerritoryID]        int,
+    Territory             nvarchar(50),
+    [CountryRegionCode]  nvarchar(3),
+    [Group]              nvarchar(50),
+    Province             nvarchar(50),
+    [City]               nvarchar(50),
+    Latitude             DECIMAL(9,6),
+    Longitude            DECIMAL(9,6)
+);
+GO
+
+
+-- =============================================
+-- SalesOrderHeader_Fact
+-- =============================================
+-- DROP TABLE SalesOrderHeader_Fact;
+
+CREATE TABLE SalesOrderHeader_Fact
+(
+    [SalesOrderID]              int,
+    [RevisionNumber]            tinyint,
+    [OrderDate]                 datetime,
+    [DueDate]                   datetime,
+    [ShipDate]                  datetime,
+    [Status]                    tinyint,
+    [OnlineOrderFlag]           varchar(25),
+    [SalesOrderNumber]          varchar(25),
+    [PurchaseOrderNumber]       varchar(25),
+    [AccountNumber]             varchar(20),
+    [CustomerID]                int,
+    [SalesPersonID]             int,
+    [TerritoryID]               int,
+    [BillToAddressID]           int,
+    [ShipToAddressID]           int,
+    [ShipMethodID]              int,
+    [CreditCardID]              int,
+    [CreditCardApprovalCode]    varchar(15),
+    [CurrencyRateID]            int,
+    [SubTotal]                  money,
+    [TaxAmt]                    money,
+    [Freight]                   money,
+    [TotalDue]                  money,
+    [Comment]                   varchar(128),
+    [rowguid]                   uniqueidentifier,
+    [SalesOrderHeader_ModifiedDate] datetime
+);
+GO
+
+
+-- =============================================
+-- SalesOrderDetail_Fact
+-- =============================================
+-- DROP TABLE SalesOrderDetail_Fact;
+
+CREATE TABLE SalesOrderDetail_Fact
+(
+    [SalesOrderID]               int,
+    [SalesOrderDetailID]         int,
+    [ProductID]                  int,
+    [SpecialOfferID]             int,
+    -- [CarrierTrackingNumber] nvarchar(25)   -- intentionally excluded
+    [OrderQty]                   smallint,
+    [UnitPrice]                  money,
+    [UnitPriceDiscount]          money,
+    [LineTotal]                  money, -- Assigned this data type myself
+    [SalesOrderDetail_ModifiedDate] datetime
+);
+GO
