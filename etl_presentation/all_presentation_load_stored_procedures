@@ -1,0 +1,673 @@
+-- #############################################################
+-- AdventureWorks Presentation Layer -- All Load Procedures
+-- Sales Daily Report project
+--
+-- Everything here runs against AdventureWorks_Presentation and
+-- reads from AdventureWorks_Stage. Run Dim procs before Fact
+-- procs is not required (facts read from staging, not Dim),
+-- BUT usp_Load_dimcustomerdetail must run AFTER
+-- usp_Load_dimperson and usp_Load_dimcustomer, since it reads
+-- from Person_Dim / Customer_Dim directly, not staging.
+--
+-- CONTENTS:
+--   DIM PROCS
+--     usp_Load_dimproduct
+--     usp_Load_dimproductcategory
+--     usp_Load_dimproductsubcategory
+--     usp_Load_dimterritory
+--     usp_Load_dimperson
+--     usp_Load_dimstore
+--     usp_Load_dimcustomer
+--     usp_Load_dimgeography
+--     usp_Load_dimcustomerdetail   (run last -- depends on Person_Dim / Customer_Dim)
+--   FACT PROCS
+--     usp_Load_factsalesorderdetail
+--     usp_Load_factsalesorderheader
+-- #############################################################
+
+
+-- #############################################################
+-- DIM PROCEDURES
+-- #############################################################
+
+-- =============================================
+-- Procedure:   usp_Load_dimproduct
+-- Purpose:     Transforms raw Product_Stage data into Product_Dim,
+--              the presentation-layer dimension table.
+--
+-- Notes:       - ProductID is used as the shared key across the model
+--                (no surrogate key for now — Type 1, full reload only).
+--              - 'Unknown_Value' is applied only to descriptive/label
+--                fields where blank genuinely means "we don't know
+--                this attribute" (ProductName, Class, Style, ProductLine).
+--                It is NOT applied to Size (derived, null = not
+--                applicable, not missing) or to date fields (null
+--                carries real meaning: still active / not discontinued).
+-- =============================================
+USE AdventureWorks_Presentation;
+GO
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+CREATE OR ALTER PROCEDURE usp_Load_dimproduct
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE [dbo].[Product_Dim];
+
+        INSERT INTO Product_Dim (
+            [ProductID], [ProductSubcategoryID], [ProductModelID],
+            [ProductName],
+            [Size],
+            [BaseProductName],
+            [ProductNumber], [MakeFlag], [FinishedGoodsFlag],
+            [ReorderPoint], [StandardCost], [ListPrice], [ProductLine], [Class], [Style],
+            [SellStartDate], [SellEndDate],
+            [DiscontinuedDate], [Product_ModifiedDate]
+        )
+        SELECT
+            [ProductID], [ProductSubcategoryID], [ProductModelID],
+
+            CASE
+                WHEN [ProductName] IS NULL OR [ProductName] = '' THEN 'Unknown_Value'
+                ELSE [ProductName]
+            END AS [ProductName],
+
+            [Size],
+
+            CASE
+                WHEN RTRIM([BaseProductName]) LIKE '%-' THEN LEFT(RTRIM([BaseProductName]), LEN(RTRIM([BaseProductName])) - 1)
+                ELSE [BaseProductName]
+            END AS [BaseProductName],
+
+            [ProductNumber], [MakeFlag], [FinishedGoodsFlag],
+            [ReorderPoint], [StandardCost], [ListPrice],
+
+            CASE
+                WHEN [ProductLine] IS NULL OR [ProductLine] = '' THEN 'Unknown_Value'
+                ELSE [ProductLine]
+            END AS [ProductLine],
+
+            [Class], [Style],
+            [SellStartDate], [SellEndDate],
+            [DiscontinuedDate], [Product_ModifiedDate]
+        FROM
+        (
+            SELECT
+                [ProductID],
+
+                [Name] AS [ProductName],
+
+                -- Extract the size or number part
+                CASE
+                    -- Case 1: Text contains a comma, size comes after comma
+                    WHEN [Name] LIKE '%,%' THEN
+                        LTRIM(SUBSTRING([Name], CHARINDEX(',', [Name]) + 1, LEN([Name])))
+                    -- Case 2: Ends with a space + number (e.g. "Washer 1", "Hex Nut 12")
+                    WHEN [Name] LIKE '% [0-9]%' OR [Name] LIKE '% [0-9]' THEN
+                        RIGHT([Name], CHARINDEX(' ', REVERSE([Name])) - 1)
+                    -- Otherwise, no size info
+                    ELSE NULL
+                END AS Size,
+
+                -- Extract the base product name
+                CASE
+                    -- Case 1: Has a comma before size
+                    WHEN [Name] LIKE '%,%' THEN
+                        RTRIM(SUBSTRING([Name], 1, CHARINDEX(',', [Name]) - 1))
+                    -- Case 2: Ends with a number, remove last word
+                    WHEN [Name] LIKE '% [0-9]%' OR [Name] LIKE '% [0-9]' THEN
+                        LEFT([Name], LEN([Name]) - CHARINDEX(' ', REVERSE([Name])))
+                    -- Otherwise, full name as is
+                    ELSE [Name]
+                END AS BaseProductName,
+
+                [ProductNumber], [MakeFlag], [FinishedGoodsFlag],
+                [ReorderPoint], [StandardCost], [ListPrice], [ProductLine],
+
+                CASE
+                    WHEN [Class] IS NULL OR [Class] = '' THEN 'Unknown_Value'
+                    ELSE [Class]
+                END AS [Class],
+
+                CASE
+                    WHEN [Style] IS NULL OR [Style] = '' THEN 'Unknown_Value'
+                    ELSE [Style]
+                END AS [Style],
+
+                [ProductSubcategoryID], [ProductModelID], [SellStartDate], [SellEndDate],
+                [DiscontinuedDate], ModifiedDate AS [Product_ModifiedDate]
+            FROM [AdventureWorks_Stage].[dbo].[Product_Stage]
+        ) AS Product_Stage;
+
+        COMMIT TRANSACTION;
+
+        SELECT @@ROWCOUNT AS RowsLoaded;
+
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- Running the proc
+-- EXEC [dbo].[usp_Load_dimproduct];
+
+-- =============================================
+-- Dim layer load procedures for AdventureWorks_Presentation
+--
+-- Standard pattern applied throughout:
+--   - TRUNCATE + full reload every run (Type 1, no history)
+--   - Wrapped in TRY/CATCH + transaction so a failure never leaves
+--     a Dim table empty with no error surfaced
+--   - 'Unknown_Value' applied only to descriptive/label fields where
+--     blank genuinely means "we don't know this attribute" -- not to
+--     numeric fields, derived nulls, or dates where null is meaningful
+--   - Dead/leftover commented-out dedup blocks removed (not needed;
+--     TRUNCATE already guarantees no duplicates)
+--
+-- Run order matters for one of these:
+--   usp_Load_dimperson and usp_Load_dimcustomer must both run BEFORE
+--   usp_Load_dimcustomerdetail, since that proc reads from Person_Dim
+--   and Customer_Dim directly, not from staging.
+-- =============================================
+
+USE AdventureWorks_Presentation;
+GO
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+
+-- =============================================
+-- usp_Load_dimproductcategory
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_dimproductcategory
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE [dbo].[Productcategory_Dim];
+
+        INSERT INTO Productcategory_Dim (
+            [ProductCategoryID], [ProductCategory], ProductCategory_ModifiedDate
+        )
+        SELECT
+            PC.[ProductCategoryID], PC.[ProductCategory], PC.ProductCategory_ModifiedDate
+        FROM
+        (
+            SELECT
+                [ProductCategoryID],
+                [Name] AS [ProductCategory],
+                [ModifiedDate] AS ProductCategory_ModifiedDate
+            FROM [AdventureWorks_Stage].[dbo].[Productcategory_Stage]
+        ) AS PC;
+
+        COMMIT TRANSACTION;
+        SELECT @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_dimproductcategory;
+
+
+-- =============================================
+-- usp_Load_dimproductsubcategory
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_dimproductsubcategory
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE [dbo].ProductSubcategory_Dim;
+
+        INSERT INTO ProductSubcategory_Dim (
+            [ProductSubcategoryID], [ProductCategoryID], ProductSubCategory, ProductSubCategory_ModifiedDate
+        )
+        SELECT
+            [ProductSubcategoryID], [ProductCategoryID], ProductSubCategory, ProductSubCategory_ModifiedDate
+        FROM
+        (
+            SELECT
+                [ProductSubcategoryID],
+                [ProductCategoryID],
+                [Name] AS ProductSubCategory,
+                [ModifiedDate] AS ProductSubCategory_ModifiedDate
+            FROM [AdventureWorks_Stage].[dbo].[ProductSubcategory_Stage]
+        ) PSC;
+
+        COMMIT TRANSACTION;
+        SELECT @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_dimproductsubcategory;
+
+
+-- =============================================
+-- usp_Load_dimterritory
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_dimterritory
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE [dbo].Territory_Dim;
+
+        INSERT INTO Territory_Dim (
+            [TerritoryID], [TerritoryName], [CountryRegionCode], [Group], [Territory_ModifiedDate]
+        )
+        SELECT
+            [TerritoryID], [TerritoryName], [CountryRegionCode], [Group], [Territory_ModifiedDate]
+        FROM
+        (
+            SELECT
+                [TerritoryID],
+
+                CASE
+                    WHEN [Name] IS NULL OR [Name] = '' THEN 'Unknown_Value'
+                    ELSE [Name]
+                END AS [TerritoryName],
+
+                CASE
+                    WHEN [CountryRegionCode] IS NULL OR [CountryRegionCode] = '' THEN 'Unknown_Value'
+                    ELSE [CountryRegionCode]
+                END AS [CountryRegionCode],
+
+                CASE
+                    WHEN [Group] IS NULL OR [Group] = '' THEN 'Unknown_Value'
+                    ELSE [Group]
+                END AS [Group],
+
+                ModifiedDate AS [Territory_ModifiedDate]
+            FROM [AdventureWorks_Stage].[dbo].[SalesTerritory_Stage]
+        ) AS src;
+
+        COMMIT TRANSACTION;
+        SELECT @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_dimterritory;
+
+
+-- =============================================
+-- usp_Load_dimperson
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_dimperson
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE [dbo].[Person_Dim];
+
+        INSERT INTO Person_Dim (PersonID, PersonType, FirstName, LastName, EmailPromotion, Person_ModifiedDate)
+        SELECT
+            [PersonID], [PersonType], [FirstName], [LastName], [EmailPromotion], Person_ModifiedDate
+        FROM
+        (
+            SELECT
+                [BusinessEntityID] AS [PersonID],
+
+                CASE
+                    WHEN [PersonType] IS NULL OR [PersonType] = '' THEN 'Unknown_Value'
+                    ELSE [PersonType]
+                END AS [PersonType],
+
+                CASE
+                    WHEN [FirstName] IS NULL OR [FirstName] = '' THEN 'Unknown_Value'
+                    ELSE [FirstName]
+                END AS [FirstName],
+
+                CASE
+                    WHEN [LastName] IS NULL OR [LastName] = '' THEN 'Unknown_Value'
+                    ELSE [LastName]
+                END AS [LastName],
+
+                -- Numeric field: 0 used as the "no promotion opted in" default,
+                -- not 'Unknown_Value' (which is a string and wouldn't fit anyway)
+                CASE
+                    WHEN [EmailPromotion] IS NULL THEN 0
+                    ELSE [EmailPromotion]
+                END AS [EmailPromotion],
+
+                ModifiedDate AS Person_ModifiedDate
+            FROM [AdventureWorks_Stage].[dbo].[Person_Stage]
+        ) AS Person;
+
+        COMMIT TRANSACTION;
+        SELECT @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_dimperson;
+
+
+-- =============================================
+-- usp_Load_dimstore
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_dimstore
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE [dbo].Store_Dim;
+
+        INSERT INTO Store_Dim ([StoreID], [StoreName], [SalesPersonID], [Store_ModifiedDate])
+        SELECT
+            [StoreID], [StoreName], [SalesPersonID], [Store_ModifiedDate]
+        FROM
+        (
+            SELECT
+                [BusinessEntityID] AS [StoreID],
+
+                CASE
+                    WHEN [Name] IS NULL OR [Name] = '' THEN 'Unknown_Value'
+                    ELSE [Name]
+                END AS [StoreName],
+
+                [SalesPersonID],
+                [ModifiedDate] AS [Store_ModifiedDate]
+            FROM [AdventureWorks_Stage].[dbo].[Store_Stage]
+        ) AS src;
+
+        COMMIT TRANSACTION;
+        SELECT @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_dimstore;
+
+
+-- =============================================
+-- usp_Load_dimcustomer
+--
+-- Bug fix: the original used "CASE AccountNumber WHEN NULL THEN ..."
+-- which never actually fires -- "column = NULL" is always UNKNOWN in
+-- SQL Server, never TRUE, so the NULL case silently fell through to
+-- ELSE every time. Rewritten below using "IS NULL", which works.
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_dimcustomer
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE [dbo].[Customer_Dim];
+
+        INSERT INTO Customer_Dim ([CustomerID], [PersonID], [StoreID], [TerritoryID], [AccountNumber], ModifiedDate_Customer)
+        SELECT
+            [CustomerID], [PersonID], [StoreID], [TerritoryID], [AccountNumber], ModifiedDate_Customer
+        FROM
+        (
+            SELECT
+                [CustomerID], [PersonID], [StoreID], [TerritoryID],
+
+                CASE
+                    WHEN [AccountNumber] IS NULL OR [AccountNumber] = '' THEN 'Unknown_Value'
+                    ELSE [AccountNumber]
+                END AS [AccountNumber],
+
+                ModifiedDate AS ModifiedDate_Customer
+            FROM [AdventureWorks_Stage].[dbo].[Customer_Stage]
+        ) AS Customer;
+
+        COMMIT TRANSACTION;
+        SELECT @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_dimcustomer;
+
+
+-- =============================================
+-- usp_Load_dimcustomerdetail
+--
+-- DEPENDENCY: must run AFTER usp_Load_dimperson and usp_Load_dimcustomer,
+-- since this reads from Person_Dim and Customer_Dim directly (not staging).
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_dimcustomerdetail
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE [dbo].[CustomerDetail_Dim];
+
+        INSERT INTO CustomerDetail_Dim (
+            [PersonID], [PersonType], [FirstName], [LastName], [EmailPromotion], [Person_ModifiedDate],
+            [CustomerID], [StoreID], [TerritoryID], [AccountNumber], [ModifiedDate_Customer]
+        )
+        SELECT DISTINCT
+            Person_Dim.[PersonID], Person_Dim.[PersonType], Person_Dim.[FirstName],
+            Person_Dim.[LastName], Person_Dim.[EmailPromotion], Person_Dim.[Person_ModifiedDate],
+            Customer_Dim.[CustomerID], Customer_Dim.[StoreID], Customer_Dim.[TerritoryID],
+            Customer_Dim.[AccountNumber], Customer_Dim.[ModifiedDate_Customer]
+        FROM
+        (
+            SELECT [PersonID], [PersonType], [FirstName], [LastName], [EmailPromotion], [Person_ModifiedDate]
+            FROM [AdventureWorks_Presentation].[dbo].[Person_Dim]
+        ) AS Person_Dim
+        INNER JOIN
+        (
+            SELECT [CustomerID], [PersonID], [StoreID], [TerritoryID], [AccountNumber], [ModifiedDate_Customer]
+            FROM [AdventureWorks_Presentation].[dbo].[Customer_Dim]
+        ) AS Customer_Dim
+            ON Person_Dim.[PersonID] = Customer_Dim.[PersonID];
+
+        COMMIT TRANSACTION;
+        SELECT @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_dimcustomerdetail;
+
+
+-- #############################################################
+-- FACT PROCEDURES
+-- #############################################################
+
+-- =============================================
+-- Fact table load procedures for AdventureWorks_Presentation
+--
+-- Incremental load by date range:
+--   - @StartDate / @EndDate default to NULL, meaning "load everything"
+--     if no parameters are passed.
+--   - Uses a date-SCOPED DELETE (not TRUNCATE) before the insert, so
+--     only the rows in the given window are cleared and reloaded --
+--     everything outside that window stays untouched. This also
+--     makes the proc safe to re-run for the same window without
+--     creating duplicates.
+--   - Do NOT reintroduce TRUNCATE here if parameters are in play --
+--     TRUNCATE + a date filter wipes the whole table but only
+--     reloads a slice of it, silently losing history. That's the
+--     bug this DELETE-scoped pattern avoids.
+-- =============================================
+
+USE AdventureWorks_Presentation;
+GO
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+
+-- =============================================
+-- usp_Load_factsalesorderdetail
+--
+-- BUG FIX: the original INSERT column list and SELECT column list
+-- had [OrderQty] and [SpecialOfferID] in swapped positions relative
+-- to each other. SQL Server matches columns positionally, not by
+-- name, so this was silently writing OrderQty values into the
+-- SpecialOfferID column and vice versa. Fixed below -- both lists
+-- now use the exact same column order.
+--
+-- CarrierTrackingNumber intentionally excluded from the fact table
+-- (kept as a comment, matching the original intent).
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_factsalesorderdetail
+(
+    @StartDate datetime = NULL,
+    @EndDate   datetime = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        -- Clear only the rows in this window, so re-runs don't duplicate
+        -- and data outside the window is left untouched
+        DELETE FROM SalesOrderDetail_Fact
+        WHERE (@StartDate IS NULL OR [SalesOrderDetail_ModifiedDate] >= @StartDate)
+          AND (@EndDate   IS NULL OR [SalesOrderDetail_ModifiedDate] <= @EndDate);
+
+        INSERT INTO SalesOrderDetail_Fact (
+            [SalesOrderID], [SalesOrderDetailID], [ProductID], [SpecialOfferID],
+            [OrderQty], [UnitPrice], [UnitPriceDiscount], [LineTotal], [SalesOrderDetail_ModifiedDate]
+            -- [CarrierTrackingNumber] intentionally excluded
+        )
+        SELECT
+            [SalesOrderID], [SalesOrderDetailID], [ProductID], [SpecialOfferID],
+            [OrderQty], [UnitPrice], [UnitPriceDiscount], [LineTotal], [SalesOrderDetail_ModifiedDate]
+        FROM
+        (
+            SELECT
+                [SalesOrderID], [SalesOrderDetailID], [CarrierTrackingNumber], [OrderQty], [ProductID],
+                [SpecialOfferID], [UnitPrice], [UnitPriceDiscount], [LineTotal],
+                ModifiedDate AS [SalesOrderDetail_ModifiedDate]
+            FROM [AdventureWorks_Stage].[dbo].[SalesOrderDetail_Stage]
+        ) AS SalesOrderDetail
+        WHERE (@StartDate IS NULL OR SalesOrderDetail.[SalesOrderDetail_ModifiedDate] >= @StartDate)
+          AND (@EndDate   IS NULL OR SalesOrderDetail.[SalesOrderDetail_ModifiedDate] <= @EndDate);
+
+        COMMIT TRANSACTION;
+        SELECT @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_factsalesorderdetail;                                          -- full load
+-- EXEC dbo.usp_Load_factsalesorderdetail @StartDate = '2013-06-30', @EndDate = '2014-07-31'; -- windowed load
+
+
+-- =============================================
+-- usp_Load_factsalesorderheader
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_factsalesorderheader
+(
+    @StartDate datetime = NULL,
+    @EndDate   datetime = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        DELETE FROM SalesOrderHeader_Fact
+        WHERE (@StartDate IS NULL OR [SalesOrderHeader_ModifiedDate] >= @StartDate)
+          AND (@EndDate   IS NULL OR [SalesOrderHeader_ModifiedDate] <= @EndDate);
+
+        INSERT INTO SalesOrderHeader_Fact (
+            [SalesOrderID], [CustomerID], [SalesPersonID], [TerritoryID],
+            [BillToAddressID], [ShipToAddressID], [ShipMethodID], [CreditCardID],
+            [CurrencyRateID], [RevisionNumber], [OrderDate], [DueDate], [ShipDate],
+            [Status], [OnlineOrderFlag], [SalesOrderNumber], [PurchaseOrderNumber],
+            [AccountNumber], [CreditCardApprovalCode], [SubTotal], [TaxAmt],
+            [Freight], [TotalDue], [SalesOrderHeader_ModifiedDate]
+        )
+        SELECT
+            [SalesOrderID], [CustomerID], [SalesPersonID], [TerritoryID],
+            [BillToAddressID], [ShipToAddressID], [ShipMethodID], [CreditCardID],
+            [CurrencyRateID], [RevisionNumber], [OrderDate], [DueDate], [ShipDate],
+            [Status], [OnlineOrderFlag], [SalesOrderNumber], [PurchaseOrderNumber],
+            [AccountNumber], [CreditCardApprovalCode], [SubTotal], [TaxAmt],
+            [Freight], [TotalDue], [SalesOrderHeader_ModifiedDate]
+        FROM
+        (
+            SELECT
+                [SalesOrderID], [CustomerID], [SalesPersonID], [TerritoryID],
+                [BillToAddressID], [ShipToAddressID], [ShipMethodID], [CreditCardID],
+                [CurrencyRateID], [RevisionNumber], [OrderDate], [DueDate], [ShipDate],
+                [Status], [OnlineOrderFlag], [SalesOrderNumber], [PurchaseOrderNumber],
+                [AccountNumber], [CreditCardApprovalCode], [SubTotal], [TaxAmt],
+                [Freight], [TotalDue],
+                ModifiedDate AS [SalesOrderHeader_ModifiedDate]
+            FROM [AdventureWorks_Stage].[dbo].[SalesOrderHeader_Stage]
+        ) AS SalesOrderHeader
+        WHERE (@StartDate IS NULL OR SalesOrderHeader.[SalesOrderHeader_ModifiedDate] >= @StartDate)
+          AND (@EndDate   IS NULL OR SalesOrderHeader.[SalesOrderHeader_ModifiedDate] <= @EndDate);
+
+        COMMIT TRANSACTION;
+        SELECT @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_factsalesorderheader;                                          -- full load
+-- EXEC dbo.usp_Load_factsalesorderheader @StartDate = '2013-06-30', @EndDate = '2014-07-31'; -- windowed load
