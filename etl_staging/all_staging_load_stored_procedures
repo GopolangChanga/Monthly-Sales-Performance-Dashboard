@@ -1,0 +1,380 @@
+-- =============================================
+-- Updated staging load procedures for AdventureWorks_Stage
+--
+-- Standard pattern applied to every proc below:
+--   - Full raw copy from source, no filtering (business rules belong
+--     downstream in the Dim load, not here)
+--   - TRUNCATE + INSERT every run (staging is disposable / always fresh)
+--   - BatchID   : unique ID per run, stamped on every row loaded
+--   - LoadDateTime : when the row landed in staging
+--   - Wrapped in a transaction with TRY/CATCH so a failure never
+--     leaves the staging table half-loaded, and the error still
+--     surfaces (important once these run inside SQL Agent Jobs)
+--   - Final SELECT returns BatchID + row count so the caller/job
+--     log can confirm what the run actually did
+--
+-- Run 01_alter_stage_tables_add_batch_columns.sql first.
+-- =============================================
+
+USE AdventureWorks_Stage;
+GO
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+
+-- =============================================
+-- usp_Load_StagingSalesOrderHeader
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_StagingSalesOrderHeader
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @BatchID UNIQUEIDENTIFIER = NEWID();
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE dbo.SalesOrderHeader_Stage;
+
+        INSERT INTO SalesOrderHeader_Stage (
+            [SalesOrderID], [RevisionNumber], [OrderDate], [DueDate], [ShipDate],
+            [Status], [OnlineOrderFlag], [SalesOrderNumber], [PurchaseOrderNumber],
+            [AccountNumber], [CustomerID], [SalesPersonID], [TerritoryID],
+            [BillToAddressID], [ShipToAddressID], [ShipMethodID], [CreditCardID],
+            [CreditCardApprovalCode], [CurrencyRateID], [SubTotal], [TaxAmt],
+            [Freight], [TotalDue], [Comment], [rowguid], [ModifiedDate],
+            [BatchID], [LoadDateTime]
+        )
+        SELECT
+            [SalesOrderID], [RevisionNumber], [OrderDate], [DueDate], [ShipDate],
+            [Status], [OnlineOrderFlag], [SalesOrderNumber], [PurchaseOrderNumber],
+            [AccountNumber], [CustomerID], [SalesPersonID], [TerritoryID],
+            [BillToAddressID], [ShipToAddressID], [ShipMethodID], [CreditCardID],
+            [CreditCardApprovalCode], [CurrencyRateID], [SubTotal], [TaxAmt],
+            [Freight], [TotalDue], [Comment], [rowguid], [ModifiedDate],
+            @BatchID, GETDATE()
+        FROM [AdventureWorks2022].[Sales].[SalesOrderHeader];
+
+        COMMIT TRANSACTION;
+        SELECT @BatchID AS BatchID, @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_StagingSalesOrderHeader;
+
+
+-- =============================================
+-- usp_Load_store
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_store
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @BatchID UNIQUEIDENTIFIER = NEWID();
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE dbo.Store_Stage;
+
+        INSERT INTO Store_Stage (
+            BusinessEntityID, [Name], SalesPersonID, ModifiedDate,
+            BatchID, LoadDateTime
+        )
+        SELECT
+            BusinessEntityID, [Name], SalesPersonID, ModifiedDate,
+            @BatchID, GETDATE()
+        FROM [AdventureWorks2022].[Sales].[Store];
+
+        COMMIT TRANSACTION;
+        SELECT @BatchID AS BatchID, @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_store;
+
+
+-- =============================================
+-- usp_Load_salesterritory
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_salesterritory
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @BatchID UNIQUEIDENTIFIER = NEWID();
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE dbo.SalesTerritory_Stage;
+
+        INSERT INTO SalesTerritory_Stage (
+            [TerritoryID], [Name], [CountryRegionCode], [Group], [rowguid], [ModifiedDate],
+            BatchID, LoadDateTime
+        )
+        SELECT
+            [TerritoryID], [Name], [CountryRegionCode], [Group], [rowguid], [ModifiedDate],
+            @BatchID, GETDATE()
+        FROM [AdventureWorks2022].[Sales].[SalesTerritory];
+
+        COMMIT TRANSACTION;
+        SELECT @BatchID AS BatchID, @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_salesterritory;
+
+
+-- =============================================
+-- usp_Load_StagingSalesOrderDetail
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_StagingSalesOrderDetail
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @BatchID UNIQUEIDENTIFIER = NEWID();
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE dbo.SalesOrderDetail_Stage;
+
+        INSERT INTO SalesOrderDetail_Stage (
+            [SalesOrderID], [SalesOrderDetailID], [CarrierTrackingNumber], [OrderQty],
+            [ProductID], [SpecialOfferID], [UnitPrice], [UnitPriceDiscount],
+            [LineTotal], [rowguid], [ModifiedDate],
+            BatchID, LoadDateTime
+        )
+        SELECT
+            [SalesOrderID], [SalesOrderDetailID], [CarrierTrackingNumber], [OrderQty],
+            [ProductID], [SpecialOfferID], [UnitPrice], [UnitPriceDiscount],
+            [LineTotal], [rowguid], [ModifiedDate],
+            @BatchID, GETDATE()
+        FROM [AdventureWorks2022].[Sales].[SalesOrderDetail];
+
+        COMMIT TRANSACTION;
+        SELECT @BatchID AS BatchID, @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_StagingSalesOrderDetail;
+
+
+-- =============================================
+-- usp_Load_StagingProductSubcategory
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_StagingProductSubcategory
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @BatchID UNIQUEIDENTIFIER = NEWID();
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE dbo.ProductSubcategory_Stage;
+
+        INSERT INTO ProductSubcategory_Stage (
+            [ProductSubcategoryID], [ProductCategoryID], [Name], [rowguid], [ModifiedDate],
+            BatchID, LoadDateTime
+        )
+        SELECT
+            [ProductSubcategoryID], [ProductCategoryID], [Name], [rowguid], [ModifiedDate],
+            @BatchID, GETDATE()
+        FROM [AdventureWorks2022].[Production].[ProductSubcategory];
+
+        COMMIT TRANSACTION;
+        SELECT @BatchID AS BatchID, @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_StagingProductSubcategory;
+
+
+-- =============================================
+-- usp_Load_StagingProductCategory
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_StagingProductCategory
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @BatchID UNIQUEIDENTIFIER = NEWID();
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE dbo.ProductCategory_Stage;
+
+        INSERT INTO ProductCategory_Stage (
+            [ProductCategoryID], [Name], [rowguid], [ModifiedDate],
+            BatchID, LoadDateTime
+        )
+        SELECT
+            [ProductCategoryID], [Name], [rowguid], [ModifiedDate],
+            @BatchID, GETDATE()
+        FROM [AdventureWorks2022].[Production].[ProductCategory];
+
+        COMMIT TRANSACTION;
+        SELECT @BatchID AS BatchID, @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_StagingProductCategory;
+
+
+-- =============================================
+-- usp_Load_StagingPerson
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_StagingPerson
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @BatchID UNIQUEIDENTIFIER = NEWID();
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE dbo.Person_Stage;
+
+        INSERT INTO Person_Stage (
+            BusinessEntityID, PersonType, FirstName, LastName, EmailPromotion, rowguid, ModifiedDate,
+            BatchID, LoadDateTime
+        )
+        SELECT
+            [BusinessEntityID], [PersonType], [FirstName], [LastName], [EmailPromotion], [rowguid], [ModifiedDate],
+            @BatchID, GETDATE()
+        FROM [AdventureWorks2022].[Person].[Person];
+
+        COMMIT TRANSACTION;
+        SELECT @BatchID AS BatchID, @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_StagingPerson;
+
+
+-- =============================================
+-- usp_Load_geography
+-- Note: this one is derived from a join across StateProvince, Address,
+-- and SalesTerritory, rather than a straight 1:1 source table copy.
+-- Kept the "WHERE SpatialLocation IS NOT NULL" filter as-is since it's
+-- a data-quality guard (can't geocode a row with no coordinates), not
+-- a business rule — that distinction is worth keeping in mind, but
+-- this one is fine to leave here.
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_geography
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @BatchID UNIQUEIDENTIFIER = NEWID();
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE dbo.Geography_Stage;
+
+        INSERT INTO Geography_Stage (
+            [TerritoryID], Territory, [CountryRegionCode], [Group], Province,
+            [City], Latitude, Longitude,
+            BatchID, LoadDateTime
+        )
+        SELECT
+            SP_A_ST.[TerritoryID], SP_A_ST.Territory, SP_A_ST.[CountryRegionCode],
+            SP_A_ST.[Group], SP_A_ST.Province, SP_A_ST.[City],
+            SP_A_ST.Latitude, SP_A_ST.Longitude,
+            @BatchID, GETDATE()
+        FROM (
+            SELECT DISTINCT
+                ST.[TerritoryID],
+                ST.[Name] AS Territory,
+                ST.[CountryRegionCode],
+                ST.[Group],
+                SP.[Name] AS Province,
+                A.[City],
+                A.[SpatialLocation].Lat  AS Latitude,
+                A.[SpatialLocation].Long AS Longitude
+            FROM [AdventureWorks2022].[Person].[StateProvince] AS SP
+            INNER JOIN [AdventureWorks2022].[Person].[Address] AS A
+                ON SP.[StateProvinceID] = A.[StateProvinceID]
+            INNER JOIN [AdventureWorks2022].[Sales].[SalesTerritory] AS ST
+                ON SP.[TerritoryID] = ST.[TerritoryID]
+            -- Filters out addresses with no coordinates to geocode; data quality
+            -- guard, not a business rule, so this stays here in staging
+            WHERE A.[SpatialLocation] IS NOT NULL
+        ) AS SP_A_ST;
+
+        COMMIT TRANSACTION;
+        SELECT @BatchID AS BatchID, @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_geography;
+
+
+-- =============================================
+-- usp_Load_StagingCustomer
+-- =============================================
+CREATE OR ALTER PROCEDURE usp_Load_StagingCustomer
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @BatchID UNIQUEIDENTIFIER = NEWID();
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE dbo.Customer_Stage;
+
+        INSERT INTO Customer_Stage (
+            [CustomerID], [PersonID], [StoreID], [TerritoryID], [AccountNumber], rowguid, ModifiedDate,
+            BatchID, LoadDateTime
+        )
+        SELECT
+            [CustomerID], [PersonID], [StoreID], [TerritoryID], [AccountNumber], rowguid, ModifiedDate,
+            @BatchID, GETDATE()
+        FROM [AdventureWorks2022].[Sales].[Customer];
+
+        COMMIT TRANSACTION;
+        SELECT @BatchID AS BatchID, @@ROWCOUNT AS RowsLoaded;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- EXEC dbo.usp_Load_StagingCustomer;
