@@ -1,0 +1,191 @@
+-- =============================================
+-- Creates all staging tables in AdventureWorks_Stage
+--
+-- Notes: - These are raw landing tables: no PKs/FKs, structure
+--          mirrors the source column-for-column, no business logic.
+--        - Run this BEFORE 01_alter_stage_tables_add_batch_columns.sql
+--          (that script adds BatchID + LoadDateTime to each table
+--          created here).
+--        - Product_Stage is not included here, since it was created
+--          earlier as part of the original restore/exercise.
+-- =============================================
+
+USE AdventureWorks_Stage;
+GO
+
+
+-- =============================================
+-- ProductCategory_Stage
+-- =============================================
+-- DROP TABLE ProductCategory_Stage;
+
+CREATE TABLE ProductCategory_Stage
+(
+    [ProductCategoryID] int,
+    [Name]               nvarchar(50),
+    [rowguid]            uniqueidentifier,
+    [ModifiedDate]       datetime
+);
+GO
+
+
+-- =============================================
+-- ProductSubcategory_Stage
+-- =============================================
+-- DROP TABLE ProductSubcategory_Stage;
+
+CREATE TABLE ProductSubcategory_Stage
+(
+    [ProductSubcategoryID] int,
+    [ProductCategoryID]    int,
+    [Name]                 nvarchar(50),
+    [rowguid]              uniqueidentifier,
+    [ModifiedDate]         datetime
+);
+GO
+
+
+-- =============================================
+-- Person_Stage
+-- =============================================
+-- DROP TABLE Person_Stage;
+
+CREATE TABLE Person_Stage
+(
+    BusinessEntityID int,
+    PersonType       nchar(2),
+    FirstName        nvarchar(50),
+    LastName         nvarchar(50),
+    EmailPromotion   int,
+    rowguid          uniqueidentifier,
+    ModifiedDate     datetime
+);
+GO
+
+
+-- =============================================
+-- Store_Stage
+-- =============================================
+-- DROP TABLE Store_Stage;
+
+CREATE TABLE Store_Stage
+(
+    BusinessEntityID int,
+    [SalesPersonID]  int,
+    [Name]           nvarchar(50),
+    [ModifiedDate]   datetime
+);
+GO
+
+
+-- =============================================
+-- SalesTerritory_Stage
+-- =============================================
+-- DROP TABLE SalesTerritory_Stage;
+
+CREATE TABLE SalesTerritory_Stage
+(
+    [TerritoryID]        int,
+    [Name]               nvarchar(50),
+    [CountryRegionCode]  nvarchar(3),
+    [Group]              nvarchar(50),
+    [rowguid]            uniqueidentifier,
+    [ModifiedDate]       datetime
+);
+GO
+
+
+-- =============================================
+-- Customer_Stage
+-- =============================================
+-- DROP TABLE Customer_Stage;
+
+CREATE TABLE Customer_Stage
+(
+    CustomerID    int,
+    PersonID      int,
+    StoreID       int,
+    TerritoryID   int,
+    AccountNumber nvarchar(10),
+    rowguid       uniqueidentifier,
+    ModifiedDate  datetime
+);
+GO
+
+
+-- =============================================
+-- Geography_Stage
+-- =============================================
+-- DROP TABLE Geography_Stage;
+
+CREATE TABLE Geography_Stage
+(
+    [TerritoryID]       int,
+    Territory           nvarchar(50),
+    [CountryRegionCode] nvarchar(3),
+    [Group]             nvarchar(50),
+    Province            nvarchar(50),
+    [City]              nvarchar(50),
+    Latitude            DECIMAL(9,6),
+    Longitude           DECIMAL(9,6)
+);
+GO
+
+
+-- =============================================
+-- SalesOrderHeader_Stage
+-- =============================================
+-- DROP TABLE SalesOrderHeader_Stage;
+
+CREATE TABLE SalesOrderHeader_Stage
+(
+    [SalesOrderID]           int,
+    [RevisionNumber]         tinyint,
+    [OrderDate]              datetime,
+    [DueDate]                datetime,
+    [ShipDate]               datetime,
+    [Status]                 tinyint,
+    [OnlineOrderFlag]        varchar(25),
+    [SalesOrderNumber]       varchar(25),
+    [PurchaseOrderNumber]    varchar(25),
+    [AccountNumber]          varchar(20),
+    [CustomerID]             int,
+    [SalesPersonID]          int,
+    [TerritoryID]            int,
+    [BillToAddressID]        int,
+    [ShipToAddressID]        int,
+    [ShipMethodID]           int,
+    [CreditCardID]           int,
+    [CreditCardApprovalCode] varchar(15),
+    [CurrencyRateID]         int,
+    [SubTotal]               money,
+    [TaxAmt]                 money,
+    [Freight]                money,
+    [TotalDue]               money,
+    [Comment]                varchar(128),
+    [rowguid]                uniqueidentifier,
+    [ModifiedDate]           datetime
+);
+GO
+
+
+-- =============================================
+-- SalesOrderDetail_Stage
+-- =============================================
+-- DROP TABLE SalesOrderDetail_Stage;
+
+CREATE TABLE SalesOrderDetail_Stage
+(
+    [SalesOrderID]          int,
+    [SalesOrderDetailID]    int,
+    [CarrierTrackingNumber] nvarchar(25),
+    [OrderQty]              smallint,
+    [ProductID]             int,
+    [SpecialOfferID]        int,
+    [UnitPrice]             money,
+    [UnitPriceDiscount]     money,
+    [LineTotal]             money, -- Assigned this data type myself
+    [rowguid]               uniqueidentifier,
+    [ModifiedDate]          datetime
+);
+GO
