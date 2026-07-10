@@ -1,0 +1,59 @@
+-- =============================================
+-- Adds BatchID + LoadDateTime tracking columns to every staging table
+-- BatchID   : ties every row to the specific proc run that loaded it
+-- LoadDateTime : when the row landed in staging (not the source's ModifiedDate)
+-- Run this once against AdventureWorks_Stage before running the updated procs
+-- =============================================
+
+USE AdventureWorks_Stage;
+GO
+
+ALTER TABLE dbo.Product_Stage ADD
+    BatchID      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    LoadDateTime DATETIME         NOT NULL DEFAULT GETDATE();
+GO
+
+ALTER TABLE dbo.SalesOrderHeader_Stage ADD
+    BatchID      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    LoadDateTime DATETIME         NOT NULL DEFAULT GETDATE();
+GO
+
+ALTER TABLE dbo.Store_Stage ADD
+    BatchID      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    LoadDateTime DATETIME         NOT NULL DEFAULT GETDATE();
+GO
+
+ALTER TABLE dbo.SalesTerritory_Stage ADD
+    BatchID      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    LoadDateTime DATETIME         NOT NULL DEFAULT GETDATE();
+GO
+
+ALTER TABLE dbo.SalesOrderDetail_Stage ADD
+    BatchID      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    LoadDateTime DATETIME         NOT NULL DEFAULT GETDATE();
+GO
+
+ALTER TABLE dbo.ProductSubcategory_Stage ADD
+    BatchID      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    LoadDateTime DATETIME         NOT NULL DEFAULT GETDATE();
+GO
+
+ALTER TABLE dbo.ProductCategory_Stage ADD
+    BatchID      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    LoadDateTime DATETIME         NOT NULL DEFAULT GETDATE();
+GO
+
+ALTER TABLE dbo.Person_Stage ADD
+    BatchID      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    LoadDateTime DATETIME         NOT NULL DEFAULT GETDATE();
+GO
+
+ALTER TABLE dbo.Geography_Stage ADD
+    BatchID      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    LoadDateTime DATETIME         NOT NULL DEFAULT GETDATE();
+GO
+
+ALTER TABLE dbo.Customer_Stage ADD
+    BatchID      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+    LoadDateTime DATETIME         NOT NULL DEFAULT GETDATE();
+GO
