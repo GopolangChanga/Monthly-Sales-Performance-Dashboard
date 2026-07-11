@@ -671,3 +671,122 @@ END;
 GO
 -- EXEC dbo.usp_Load_factsalesorderheader;                                          -- full load
 -- EXEC dbo.usp_Load_factsalesorderheader @StartDate = '2013-06-30', @EndDate = '2014-07-31'; -- windowed load
+
+
+
+
+-- =============================================
+-- Procedure:   [dbo].[usp_Load_Product_Dim_Wide]
+
+
+USE AdventureWorks_Presentation;
+GO
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[usp_Load_Product_Dim_Wide]
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        TRUNCATE TABLE [Product_Dim_Wide];
+
+          /* --------------------------------------------------------
+     Step 2: Insert flattened product data
+     Joins Product_Dim → ProductSubcategory_Dim 
+     → Productcategory_Dim to produce one wide row 
+     per product — preserving all existing cleaning 
+     logic already applied on Product_Dim
+  -------------------------------------------------------- */
+  INSERT INTO [AdventureWorks_Presentation].[dbo].[Product_Dim_Wide]
+  (
+       [ProductID]
+      ,[ProductModelID]
+      ,[ProductSubcategoryID]
+      ,[ProductCategoryID]
+      ,[ProductName]
+      ,[Size]
+      ,[BaseProductName]
+      ,[ProductNumber]
+      ,[MakeFlag]
+      ,[FinishedGoodsFlag]
+      ,[ReorderPoint]
+      ,[StandardCost]
+      ,[ListPrice]
+      ,[ProductLine]
+      ,[Class]
+      ,[Style]
+      ,[SellStartDate]
+      ,[SellEndDate]
+      ,[DiscontinuedDate]
+      ,[ProductSubCategory]
+      ,[ProductCategory]
+  )
+  SELECT
+       P.[ProductID]
+      ,P.[ProductModelID]
+      ,P.[ProductSubcategoryID]
+      ,PC.[ProductCategoryID]
+
+      -- Product attributes
+      -- All cleaning already applied on Product_Dim
+      -- carried across as-is
+      ,P.[ProductName]
+      ,P.[Size]
+      ,P.[BaseProductName]
+      ,P.[ProductNumber]
+      ,P.[MakeFlag]
+      ,P.[FinishedGoodsFlag]
+      ,P.[ReorderPoint]
+      ,P.[StandardCost]
+      ,P.[ListPrice]
+      ,P.[ProductLine]
+      ,P.[Class]
+      ,P.[Style]
+      ,P.[SellStartDate]
+      ,P.[SellEndDate]
+      ,P.[DiscontinuedDate]
+
+      -- Subcategory attributes
+      -- Products with no subcategory get labelled
+      -- as Unknown to avoid NULLs in Power BI
+      ,ISNULL(PS.[ProductSubCategory], 'Unknown Subcategory')
+          AS [ProductSubCategory]
+
+      -- Category attributes
+      -- Same NULL handling as subcategory
+      ,ISNULL(PC.[ProductCategory], 'Unknown Category')
+          AS [ProductCategory]
+
+  FROM [AdventureWorks_Presentation].[dbo].[Product_Dim] AS P
+
+  -- Join Subcategory — LEFT JOIN to retain products
+  -- with no subcategory assignment
+  LEFT JOIN [AdventureWorks_Presentation].[dbo].[ProductSubcategory_Dim] AS PS
+      ON P.[ProductSubcategoryID] = PS.[ProductSubcategoryID]
+
+  -- Join Category via Subcategory — LEFT JOIN
+  -- for same reason
+  LEFT JOIN [AdventureWorks_Presentation].[dbo].[Productcategory_Dim] AS PC
+      ON PS.[ProductCategoryID] = PC.[ProductCategoryID]
+
+
+        COMMIT TRANSACTION;
+
+        SELECT @@ROWCOUNT AS RowsLoaded;
+
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- Running the proc
+-- EXEC [dbo].[usp_Load_Product_Dim_Wide];
