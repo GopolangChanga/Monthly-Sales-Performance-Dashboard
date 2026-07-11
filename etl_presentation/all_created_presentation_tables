@@ -242,3 +242,53 @@ CREATE TABLE SalesOrderDetail_Fact
     [SalesOrderDetail_ModifiedDate] datetime
 );
 GO
+
+/* ============================================================
+   Script: Product_Dim_Wide Table + Stored Procedure
+   Purpose: Create a flattened Product dimension table 
+            combining Product_Dim, ProductSubcategory_Dim 
+            and Productcategory_Dim into one wide dimension 
+            table for use in Power BI data model
+   Database: AdventureWorks_Presentation
+   ============================================================ */
+
+
+-- ============================================================
+-- STEP 1: Create the destination table
+-- ============================================================
+
+--DROP TABLE [AdventureWorks_Presentation].[dbo].[Product_Dim_Wide]
+
+
+CREATE TABLE [Product_Dim_Wide]
+(
+    -- Product keys
+     [ProductID]               INT             NOT NULL
+    ,[ProductModelID]          INT             NULL
+    ,[ProductSubcategoryID]    INT             NULL
+    ,[ProductCategoryID]       INT             NULL
+
+    -- Product attributes
+    ,[ProductName]             NVARCHAR(50)    NULL
+    ,[Size]                    NVARCHAR(20)    NULL
+    ,[BaseProductName]         NVARCHAR(40)    NULL
+    ,[ProductNumber]           NVARCHAR(25)    NULL
+    ,[MakeFlag]                BIT             NULL
+    ,[FinishedGoodsFlag]       BIT             NULL
+    ,[ReorderPoint]            SMALLINT        NULL
+    ,[StandardCost]            MONEY           NULL
+    ,[ListPrice]               MONEY           NULL
+    ,[ProductLine]             NCHAR(30)       NULL
+    ,[Class]                   NCHAR(30)       NULL
+    ,[Style]                   NCHAR(30)       NULL
+    ,[SellStartDate]           DATETIME        NULL
+    ,[SellEndDate]             DATETIME        NULL
+    ,[DiscontinuedDate]        DATETIME        NULL
+
+    -- Subcategory attributes
+    ,[ProductSubCategory]      NVARCHAR(50)    NULL
+
+    -- Category attributes
+    ,[ProductCategory]         NVARCHAR(50)    NULL
+)
+GO
